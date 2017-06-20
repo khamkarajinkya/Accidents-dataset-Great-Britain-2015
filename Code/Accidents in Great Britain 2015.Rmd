@@ -1,0 +1,340 @@
+---
+title: <h2><center>Accidents in Great Britain</center></h2>
+date: <h4><center> April 28, 2017 </center></h4>
+output: html_document
+df_print: kable
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE, comment = NA, fig.height = 3)
+```
+
+```{r Data_Cleaning_Categorization}
+library(ggplot2)
+library(clue)
+library(chron)
+library(ggmap)
+library(viridis)
+library(knitr)
+
+df.hex = read.csv('Kaagle_Upload.csv',header = TRUE)
+
+
+hex.subset=df.hex[,c("date", "time", "vehicle_type","day_of_week","sex_of_driver","age_of_driver","age_of_vehicle","NUmber_of_Casualities_unique_to_accident_index","No_of_Vehicles_involved_unique_to_accident_index","urban_or_rural_area","accident_severity","longitude","latitude")]
+
+df.hex.subset=as.data.frame(hex.subset)
+
+
+#Subsetting data
+df.hex.subset$vehicle_category[df.hex.subset$vehicle_type %in% c(1,2,3,4,5,22,23,97)]="bikes"
+df.hex.subset$vehicle_category[df.hex.subset$vehicle_type %in% c(8,9)]="cars"
+df.hex.subset$vehicle_category[df.hex.subset$vehicle_type %in% c(10,11,18,19,20,21,98)]="heavy vehicles"
+df.hex.subset$vehicle_category[df.hex.subset$vehicle_category %in% c(NA)]="others"
+
+df.hex.subset=df.hex.subset[df.hex.subset$age_of_driver!=-1,]
+df.hex.subset=df.hex.subset[df.hex.subset$sex_of_driver!=-1,]
+df.hex.subset=df.hex.subset[df.hex.subset$age_of_vehicle!=-1,]
+df.hex.subset=df.hex.subset[df.hex.subset$urban_or_rural_area!=-1,]
+df.hex.subset=df.hex.subset[df.hex.subset$accident_severity!=-1,]
+df.hex.subset=df.hex.subset[df.hex.subset$NUmber_of_Casualities_unique_to_accident_index!=-1,]
+df.hex.subset=df.hex.subset[complete.cases(df.hex.subset[,c("longitude","latitude")]),]
+
+df.hex.subset=df.hex.subset[df.hex.subset$vehicle_category=="heavy vehicles",]
+
+df.hex.subset$region_type[df.hex.subset$urban_or_rural_area==1]="Urban"
+df.hex.subset$region_type[df.hex.subset$urban_or_rural_area==2]="Rural"
+
+#k-means and adding region variables.
+model=kmeans(df.hex.subset[,c("longitude","latitude")],10)
+model_region=clue::cl_predict(model,df.hex.subset[,c("longitude","latitude")])
+model_region=data.frame(factor(model_region))
+df.hex.subset=as.data.frame(cbind(df.hex.subset,model_region))
+df.hex.subset$factor.model_region.[is.na(df.hex.subset$factor.model_region.)]=5
+colnames(df.hex.subset)[colnames(df.hex.subset) == 'factor.model_region.']= 'region'
+
+#vehicle type
+df.hex.subset$vehicle[df.hex.subset$vehicle_type==10]="MiniBus"
+df.hex.subset$vehicle[df.hex.subset$vehicle_type==11]="Coach"
+df.hex.subset$vehicle[df.hex.subset$vehicle_type==19]="Vans"
+df.hex.subset$vehicle[df.hex.subset$vehicle_type==18]="Tram"
+df.hex.subset$vehicle[df.hex.subset$vehicle_type==20]="Trucks  over 3.5 tn"
+df.hex.subset$vehicle[df.hex.subset$vehicle_type==21]="Trucks  over 7.5 tn"
+df.hex.subset$vehicle[df.hex.subset$vehicle_type==98]="Trucks unknown weight"
+
+#combining severity levels
+df1.hex.subset=df.hex.subset
+
+df1.hex.subset$category[df1.hex.subset$vehicle_type %in% c(10,11)]="Bus"
+df1.hex.subset$category[df1.hex.subset$vehicle_type %in% c(20,21,98)]="Truck"
+df1.hex.subset$category[df1.hex.subset$vehicle_type %in% c(18)]="Tram"
+df1.hex.subset$category[df1.hex.subset$vehicle_type %in% c(19)]="Vans"
+
+df1.hex.subset$accident_severity[df1.hex.subset$accident_severity==2]=1
+
+df1.hex.subset$accident_severity[df1.hex.subset$accident_severity==1] = "Fatal Accident"
+df1.hex.subset$accident_severity[df1.hex.subset$accident_severity==3] = "Slight Accident"
+
+df1.hex.subset$femmal[df1.hex.subset$sex_of_driver=="1"]="Male"
+df1.hex.subset$femmal[df1.hex.subset$sex_of_driver=="2"]="Female"
+df1.hex.subset$femmal[df1.hex.subset$sex_of_driver=="3"]="NA"
+
+```
+<h3>Introduction</h3>  
+  
+Road accidents are a major source of human and material loss. The department of transport (Great Britain) states that  
+1) **There were a total of 186,209 casualties of varying severities**  
+2) **140,086 personal-injury road traffic accidents were reported to the police**  
+3) **Traffic volumes in 2015 rose by 1.6% compared with 2014**  
+  
+Through this project, we try modelling the severity of an accident using demographic information about the drivers, vehicle specific information and regional statistics. We base our study on the severity of accidents caused by heavy vehicles. This enabled better visual inference and pattern identification.
+  
+<h3>Data Description</h3>  
+  
+According to the dataset, there were a total of *18824* accidents reported across Great Britain in 2015. There were a total of *3260* reported fatal accidents and a total of *15564* non fatal accidents. We use the following variables to model accident severity  
+  
+1) **Accident severity** = 1 indicates fatal accident, 3 indicates non fatal accident
+2) **Vehicle Category** = Our dataset contains the following vehicle categories
+2.1) Coaches  
+2.2) MiniBus  
+2.3) Agricultural Vehicle  
+2.4) Vans  
+2.5) Trucks  over 3.5 tn    
+2.6) Trucks  over 7.5 tn  
+2.7) Trucks  over unknown weights
+3) **Date** - Date on which the accident occurred
+4) **Time** - Time of day when the accident occurred
+5) **Latitude** - Latitude at which the accident occurred, used to cluster regions
+6) **Longitude** - Longitude at which the accident occurred, used to cluster regions
+7) **Urban or Rural area**= 1 indicates urban area, 2 indicates rural area
+8) **Number of casualties unique to each accident** = Total number of casualties involved in accident. Range 1:38
+9) **Age of vehicle**: Indicates the age of the vehicle
+10) **Age of Driver**: Indicates the age of driver
+11) **Gender**: Gender of driver  
+  
+<h3>Exploring the dataset</h3>  
+
+Before we proceed ahead, we would like to explore the data, and have basic overview of what the raw data tells us. We use univariate/bivariate plotting techniques, like histograms and density plots, for some of the variables which we think are interesting and worth looking at.  
+
+Let us have a look at how the frequency of accidents vary during different times of the day.  
+<center>
+```{r Time_Series_Exploration1}
+newdata.time.agg <- aggregate(x = df1.hex.subset[c("time")], FUN = length, 
+                              by = list(Group.time = df1.hex.subset$time))
+
+newdata.time.agg$Group.time <- strftime(newdata.time.agg$Group.time,"%H:%M:%S")
+
+
+newdata.time.agg$Group.time <- chron(times = newdata.time.agg$Group.time)
+
+ggplot(newdata.time.agg, aes(x= Group.time, y= log(time))) + 
+  geom_point() + 
+  geom_smooth()+
+  xlab("Time of the day")+
+  ylab("Frequency of accidents")+
+  ggtitle("Number of accidents varying by the time of the day")+
+  theme(plot.title = element_text(hjust=0.5),axis.text.x = element_text(angle = 90, hjust = 1))
+```  
+</center>  
+  
+From the above plots, we can infer that the distribution of accidents is not constant throughout the day. Frequency of accidents is considerably lower at night, and gradually increases thereafter. It remains constant through the day, and we see a further dip in the night, as seen at the rightmost part in the graph. This is intuitive, as we would expect the number of vehicles out on the road to be higher during the day and lower during the night.  
+
+Let us also look at the distribution of the number of casualties involved in each accident across the whole dataset.  
+  
+<center>
+```{r UniEx_No_Casualty}
+##For number of casualties
+ggplot(df1.hex.subset,aes(x=NUmber_of_Casualities_unique_to_accident_index))+geom_histogram(color="darkblue", fill="lightblue", binwidth = 5, aes(y = ..density..))+xlab("Number of casualties")+ggtitle("Distribution of casualties across accidents")+theme(plot.title = element_text(hjust=0.5))
+```  
+</center>
+  
+We see that accidents with lower number of casualties are more frequent than accidents with higher number of casualties. This makes sense, since we often come across minor accidents on the road.  
+
+Next, we look at the age distribution of the drivers involved in accidents.  
+  
+<center>  
+```{r  UniEx_Age}
+##Age
+ggplot(df1.hex.subset,aes(x=age_of_driver))+geom_density(color="darkblue", fill="lightblue")+xlab("Age of driver")+ggtitle("Distribution of age of each driver")+theme(plot.title = element_text(hjust=0.5))
+```  
+</center>  
+  
+We see that the density of accidents is highest for drivers between the age group of 40 - 60. This could simply be because heavy vehicles are probably driven by more experienced driver. Another probable reason could be that older drivers are more prone to accidents, owed to their age factor.  
+
+Let us look at the gender distribution of drivers getting into accidents while driving heavy vehicles.  
+  
+```{r  UniEx_Sex}
+#Count of accidents against Sex
+as.matrix(table(df1.hex.subset$femmal))
+```  
+
+We see that our data is pretty skewed towards male drivers. This is mostly due to the reason that there are more male drivers on the road.  
+
+Below, we look at the distribution of various vehicle types that were involved in accidents across the whole dataset. We observe that maximum number of vehicles were Vans followed by Coaches and Trucks.  
+  
+```{r  UniEx_Vehicle_Type}
+#Count of accidents against Vehicle Type
+as.matrix(table(df1.hex.subset$vehicle))
+```  
+  
+Next, we would like to see if there is a trend in the distribution of accidents across all days of the week. We have summed the instances of accidents over the whole year across all the days.  
+  
+<center>
+```{r  UniEx_Days_Week}
+##Days of the week.
+ggplot(df1.hex.subset,aes(x=day_of_week))+geom_histogram(stat="count",color="darkblue", fill="lightblue")+xlab("Day")+ggtitle("Distribution of accidents for the day of the week")+theme(plot.title = element_text(hjust=0.5))
+```  
+</center>
+  
+We see that the number of accidents during the weekends is considerably lower than the number of accidents across the weekdays. Sundays are least likely days for accidents to occur on the roads. This should be because there are generally lower number of heavy vehicles on the road during non-business days.  
+
+Let us also see if the age of vehicle matters in the cases of accidents.  
+  
+<center>
+```{r  UniEx_Vehicle_Age}
+##vehicle age.
+ggplot(df1.hex.subset,aes(x=age_of_vehicle))+geom_histogram(color="darkblue", fill="lightblue",binwidth = 7)+xlab("Age of Vehicle")+ggtitle("Distribution of vehicle age")+theme(plot.title = element_text(hjust=0.5))
+```  
+</center>
+  
+We see below that the distribution is skewed towards the right, with majority of the vehicles being less than 20 years of age. Vehicles with an age of more than 20 are less likely to be seen on roads, which is probably why we have such less instances for them. Other than that, we do see that the number of accidents caused by vehicles aged between 7-14 years is considerably higher. We can infer that aged vehicles are more likely to be involved in accidents.  
+
+Finally, let us look at how the occurrence of accidents vary in urban and rural areas. We see that occurrence of accidents in urban areas is more than rural areas. That is probably because there are more number of vehicles in urban areas than in rural areas.
+  
+```{r  UniEx_Region_Type}
+#Count of accidents against Region Type
+as.matrix(table(df1.hex.subset$region_type))
+```  
+
+<h3>Exploring relationships between Accidents Severity and other variables</h3>  
+  
+We believe the distribution of fatal accidents is not constant across United Kingdom. We clustered the longitudes and latitudes of accidents available in our dataset into 10 clusters. The following plot represents the percentage frequency of fatal accidents in each of the 10 regions.  
+  
+<center>
+```{r Maps_Clustering}
+location=data.frame(locations=df1.hex.subset$region)
+location.table= data.frame(table(location))
+
+
+fatal=data.frame(fatal_count=df1.hex.subset$accident_severity,class=df1.hex.subset$region)
+fatal.table= data.frame(table(fatal))
+
+fatal.table=fatal.table[fatal.table$fatal_count=="Fatal Accident",]
+
+df2=merge(fatal.table,location.table,by.x="class",by.y = "location")
+df2$percentage=(df2$Freq.x/df2$Freq.y)*100
+
+df1.hex.subset=merge(df1.hex.subset,df2,by.x = "region",by.y ="class" )
+
+
+UK=ggmap::get_map('UK',maptype=c("roadmap"))
+ggmap(UK)+geom_point(aes(x=longitude, y=latitude,color=percentage) ,data=df1.hex.subset)+scale_x_continuous( limits = c(-7.5,1.5) , expand = c( 0 , 0 ) )+
+  scale_y_continuous( limits = c(50,58) , expand = c( 0 , 0 ) )+scale_color_viridis(option="plasma") + theme_bw() + ggtitle("Percentage distribution of fatal accidents across UK") + theme(plot.title = element_text(hjust=0.5))
+```  
+</center>
+  
+Let us see how accident severity varies with the category of the vehicle.  
+  
+<center>
+```{r  MultiEx_NoVehicle_Severity}
+#number of vehicles against type of vehicle faceted by severity
+ggplot(df1.hex.subset,aes(x= accident_severity, fill = accident_severity)) + geom_histogram(stat = "count") + xlab("Vehicle Category") + facet_wrap(~category) + ylab("Count") + ggtitle("Variation of accident severity with vehicle category") + theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```  
+</center>
+  
+We can see from the above graph that the ratio of fatal accidents to slight accidents is not constant across all categories of vehicles. We can see that Trucks have a higher ratio of fatal accidents to slight accidents, followed by buses and vans, in that order.  
+
+Now, let us plot the number of casualties against severity of accidents, and colouring it by the vehicle category, to see if we can find any trend.  
+  
+<center>
+```{r  MultiEx_NoCasualty_Severity_VehicleCat}
+#number of deaths
+ggplot(df1.hex.subset,aes(y=factor(NUmber_of_Casualities_unique_to_accident_index),x=accident_severity,color=category))+geom_point()+geom_jitter()+xlab("Accident severity")+ylab("Number of casualties")+ggtitle("Accident severity vs number of casualties colored by vehicle category")
+```  
+</center>
+  
+We see that buses generally have a higher number of casualties during accidents, which is pretty intuitive since they accommodate higher number of passengers. We tried to see if we could find a possible interaction between the two variables, but we do not observe one that should be included in the model.  
+
+Below, we plot the severity of accidents for different types of regions, across all categories of vehicles to observe possible trends and interactions. However for slight accidents the proportion of vans is more than other categories. In the case of urban areas the density of slight accidents is significantly higher than for rural areas. These are some interesting things that can be observed in the plot. However it does not seem to be significant enough to be considered as an interaction.  
+  
+<center>  
+```{r  MultiEx_RegionType_Severity_VehicleCat_VehicleType}
+ggplot(df1.hex.subset,aes(x= region_type, fill = accident_severity, group = accident_severity)) + geom_histogram(stat = "count", position = "dodge") + xlab("Region Type") + facet_wrap(~category) + ylab("Frequency") + ggtitle("Accident severity across Region type, faceted by vehicle category")
+```  
+</center>
+  
+We see that the ratio of fatal accidents to slight accidents in rural areas is generally higher than the ratio of fatal accidents to slight accidents in urban regions, across all vehicle categories. This seems like a good differentiator for predicting severity of accidents. We do also see a slight interaction between vehicle category and region type, but we shall use this interaction only if it is absolutely necessary for the model.  
+
+Now, we shall see how the severity of accidents vary by the age and the gender of the drivers.  
+  
+<center>  
+```{r  MultiEx_Age_Severity_Sex}
+ggplot(df1.hex.subset,aes(x=(age_of_driver),group =femmal, fill =femmal))+
+  geom_histogram(binwidth = 10,aes(y=..density..),position = "dodge")+
+  facet_wrap(~accident_severity)+theme(plot.title = element_text(hjust=0.5))+xlab("age")+ylab("density")+
+  ggtitle("Accident density against age faceted by accident severity, colored by gender")
+```  
+</center>
+  
+In the above graph, we see that drivers of both genders between the age of 40-50, are more prone to cause fatal accidents. Slighter accidents are generally higher for drivers between the age of 30-40, for both genders. Also, we see that the trends for fatal and severe accidents across both genders are not the same. So, we see a possible interaction between gender and age.  
+
+<h3>Modelling Accident Severity</h3>  
+We have explored our data and have a good understanding of the factors which would have an affect on Accident severity. Now, we will model accident severity against vehicle category, region type, age of driver, sex of driver, regions (differentiated by percentage of fatal accidents), and age of vehicle. We have not included any of the identified interactions in our initial model, just to see how our model performs without them. We have used multiple logistic regression to predict the probability of a fatal accident, given the predictor variables.  
+
+<h3>Model Equation</h3>
+  
+```{r model_equation, echo = TRUE, tidy = TRUE}
+model2=glm(factor(accident_severity, levels = c("Slight Accident", "Fatal Accident")) ~ category+region_type+age_of_driver+femmal+region+age_of_vehicle,data=df1.hex.subset,family = binomial(link = "logit" ))
+```  
+
+Let us have a look at the fitted vs residuals plot to see the fit of the model.  
+
+```{r model_df}
+model.df2=data.frame(fitted=fitted.values(model2),resid=residuals(model2,type = "response"))
+model.df2=cbind(df1.hex.subset,model.df2)
+```  
+  
+<center>
+```{r model_fitvsresid}
+#Fitted vs Resid
+ggplot(model.df2,aes(x=fitted,y=resid))+geom_point()+geom_jitter()+geom_smooth()+ylab("Residuals")+xlab("fitted values")
+```  
+</center>
+  
+The fit is pretty good and consistent throughout, except for the very slight kink in the middle, and that it sways upwards from the zero line by a bit at the right hand side of the plot. The slight sway is probably due to lesser data points at that end. Overall, it seems like the categorical predictor variables used in the model predict the fatality of the accident pretty accurately. We also conclude, that there is no need of including the interactions in our model, since we have a good fit without them.  
+
+Let us see the trends our model presents across different predictor variables.  
+  
+<center>  
+```{r grid_age_category}
+grid.df = expand.grid(age_of_driver=seq(21,69,3), category = unique(df1.hex.subset$category),region_type=unique(df1.hex.subset$region_type),age_of_vehicle=seq(0, 20, 1),region=unique(df1.hex.subset$region),femmal=c("Male", "Female"))
+
+model.pred = predict(model2, type = "response", newdata = grid.df)
+
+grid.pred.df = data.frame(grid.df, fatal.prob = as.vector(model.pred))
+
+
+grid1=aggregate(grid.pred.df$fatal.prob,list(grid.pred.df$age_of_vehicle, grid.pred.df$category, grid.pred.df$region),mean)
+
+colnames(grid1) = c("Vehicle_Age", "Vehicle_Category", "Region", "Probability")
+
+ggplot(grid1, aes(x = Vehicle_Age, y =Probability, group = Vehicle_Category, color = Vehicle_Category)) + geom_line() + facet_wrap(~Region, ncol = 5) + ggtitle("Fitted values against vehicle age, region, and vehicle category")
+```  
+</center>
+  
+We see that trucks are generally more prone to cause fatal accidents, followed by vans and buses, in that order. We also see that the odds of fatal accidents increase with the increase in the age of the vehicles. These trends seems to be constant throughout all regions. The probability across different regions of the map is not constant. Region $8$ seems to be most prone to fatal accidents, whereas region $5$ is least prone to fatal accidents.  
+  
+<center>
+```{r grid_age_sex}
+grid2=aggregate(grid.pred.df$fatal.prob,list(grid.pred.df$age_of_driver,grid.pred.df$femmal, grid.pred.df$region_type),mean)
+
+colnames(grid2) = c("Driver_Age", "Gender", "Region_Type","Probability")
+
+ggplot(grid2, aes(x = Driver_Age, y = Probability, group = Gender, color = Gender)) + geom_line() + facet_wrap(~Region_Type) + ggtitle("Fitted values against driver age, region types, and sex of driver")
+```  
+</center>
+  
+We see that rural areas are in general are more prone to fatal accidents than urban areas. We also see that female drivers for heavy vehicles are more prone to fatal accidents than male drivers, in both rural and urban areas. We also see that the odds of fatal accidents increase with the increase in the age of drivers. Somehow, these odds show a slightly more rapid rise for accidents in rural areas, than for accidents in urban areas. The reason for this is not very apparent, though.  
+
+<h3>Conclusion</h3>  
+
+In conclusion, we see that our model seems to explain severity of accidents accurately, and confirms with all the observations we had made on the unmodeled data. It performs reasonably well without the identified interactions, too.
